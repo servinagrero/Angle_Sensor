@@ -43,9 +43,6 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
-extern uint8_t timer_en;
-extern TIM_HandleTypeDef htim2;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -209,8 +206,6 @@ void TIM2_IRQHandler(void)
 
   /* USER CODE END TIM2_IRQn 0 */
   HAL_TIM_IRQHandler(&htim2);
-
-
   /* USER CODE BEGIN TIM2_IRQn 1 */
 
   /* USER CODE END TIM2_IRQn 1 */
@@ -223,18 +218,11 @@ void EXTI15_10_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
 	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
-	__disable_irq();
-	EXTI->PR |= GPIO_PIN_13;  // borra flag (se borra escribiendo un 1)
-	HAL_TIM_IC_Start_IT(&htim2,TIM_CHANNEL_1);  //Desenmascara interrupt IC
-	HAL_TIM_Base_Start_IT(&htim2);    //Start TIM2 with interrupt
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-	timer_en = 1; //Manda mensaje de arranque
-	__enable_irq();
   /* USER CODE END EXTI15_10_IRQn 0 */
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
 
   /* USER CODE END EXTI15_10_IRQn 1 */
-`}
+}
 
 /* USER CODE BEGIN 1 */
 
