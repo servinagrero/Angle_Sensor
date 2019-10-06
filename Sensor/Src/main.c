@@ -32,10 +32,11 @@
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
-
 /* USER CODE BEGIN PD */
 
-uint8_t timer_en = 0;
+uint8_t timer_en    = 0;
+uint8_t cycle_count = 0;
+uint8_t send        = 0;
 
 /* USER CODE END PD */
 
@@ -46,6 +47,7 @@ uint8_t timer_en = 0;
 
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 
@@ -58,12 +60,37 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
+
 /* USER CODE BEGIN 0 */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#define GETCHAR_PROTOTYPE int __io_getchar(void)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#define GETCHAR_PROTOTYPE int fgetc(FILE *f)
+#endif
+
+
+/* USER CODE BEGIN 0 */
+PUTCHAR_PROTOTYPE
+{
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
+	return ch;
+}
+
+GETCHAR_PROTOTYPE
+{
+	char ch;
+	HAL_UART_Receive(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
+
+	return ch;
+}
 
 /* USER CODE END 0 */
 
@@ -98,6 +125,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   SysTick->CTRL=0;  //Disable Systick
 
@@ -111,9 +139,24 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint8_t buffer[1024] = {0};
+  uint8_t *address_p = (uint8_t *)0x20002600;
+
+  for(int c = 0; c < 1024; ++c) {
+	  memcpy(buffer+c, address_p, 1);
+	  ++address_p;
+  }
+
   while (1)
   {
     /* USER CODE END WHILE */
+	  if(send) {
+		  int c = 0;
+		  for(c = 0; c < 1024; ++c)
+			  printf("%u ", buffer[c]);
+		  printf("\n\r");
+		  send = 0;
+	  }
 
     /* USER CODE BEGIN 3 */
   }
@@ -219,6 +262,64 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 0;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 0;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_IC_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim3, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -266,7 +367,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(G_LED_GPIO_Port, G_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, BUZZER_Pin|BOARD_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : U_BTN_Pin */
   GPIO_InitStruct.Pin = U_BTN_Pin;
@@ -274,12 +375,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(U_BTN_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : G_LED_Pin */
-  GPIO_InitStruct.Pin = G_LED_Pin;
+  /*Configure GPIO pins : BUZZER_Pin BOARD_LED_Pin */
+  GPIO_InitStruct.Pin = BUZZER_Pin|BOARD_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(G_LED_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -296,10 +397,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	// We need to position a servo 0, -90, 0, +90, 0 and then emit the tone.
 
 	// A naive approach. It is better to use a Timer to generate a perfect square signal
-	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	send = 1;
+	// HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 }
 
-void HAL_TIM_IRQHandler(TIM_HandleTypeDef htim2)
+/*
+void HAL_TIM_IRQHandler(TIM_HandleTypeDef htim)
 {
 	__disable_irq();
 	  	//Comprueba fuente de interrupcion, ccr1IF o UIF
@@ -319,6 +422,7 @@ void HAL_TIM_IRQHandler(TIM_HandleTypeDef htim2)
 
 	 __enable_irq();
 }
+*/
 /* USER CODE END 4 */
 
 /**

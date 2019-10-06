@@ -61,8 +61,10 @@ void Error_Handler(void);
 #define U_BTN_Pin GPIO_PIN_13
 #define U_BTN_GPIO_Port GPIOC
 #define U_BTN_EXTI_IRQn EXTI15_10_IRQn
-#define G_LED_Pin GPIO_PIN_5
-#define G_LED_GPIO_Port GPIOA
+#define BUZZER_Pin GPIO_PIN_1
+#define BUZZER_GPIO_Port GPIOA
+#define BOARD_LED_Pin GPIO_PIN_5
+#define BOARD_LED_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
