@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
- 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,7 +43,11 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
-extern uint8_t timer_en;
+const int D_P90 = 6399;   // For 2 ms
+const int D_0   = 6399/2; // For 1.5 ms
+const int D_M90 = 6399/4; // For 1 ms
+
+extern uint8_t send_en;
 extern TIM_HandleTypeDef htim2;
 
 /* USER CODE END PV */
@@ -60,7 +64,6 @@ extern TIM_HandleTypeDef htim2;
 
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim2;
-extern TIM_HandleTypeDef htim3;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -209,24 +212,9 @@ void TIM2_IRQHandler(void)
   /* USER CODE BEGIN TIM2_IRQn 0 */
 
   /* USER CODE END TIM2_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim2);
   /* USER CODE BEGIN TIM2_IRQn 1 */
 
   /* USER CODE END TIM2_IRQn 1 */
-}
-
-/**
-  * @brief This function handles TIM3 global interrupt.
-  */
-void TIM3_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM3_IRQn 0 */
-
-  /* USER CODE END TIM3_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim3);
-  /* USER CODE BEGIN TIM3_IRQn 1 */
-
-  /* USER CODE END TIM3_IRQn 1 */
 }
 
 /**
@@ -235,15 +223,18 @@ void TIM3_IRQHandler(void)
 void EXTI15_10_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
+	// We need to generate a PWM signal with a frequency lower than 20KHz
+	// For this we will use timer2 to generate the PWM signal
 	//
+	// We need to position a servo 0, -90, 0, +90, 0 and emit the tone.
 
-	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_13);
 	__disable_irq();
-	EXTI->PR |= GPIO_PIN_13;  // borra flag (se borra escribiendo un 1)
-	HAL_TIM_IC_Start_IT(&htim2,TIM_CHANNEL_1);  //Desenmascara interrupt IC
-	HAL_TIM_Base_Start_IT(&htim2);    //Start TIM2 with interrupt
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-	timer_en = 1; //Manda mensaje de arranque
+	EXTI->PR |= GPIO_PIN_13;  // Clear flag
+	TIM2->CCR1=D_0;
+	TIM2->CCR1=D_M90;
+	TIM2->CCR1=D_0;
+	TIM2->CCR1=D_P90;
+	TIM2->CCR1=D_0;
 	__enable_irq();
   /* USER CODE END EXTI15_10_IRQn 0 */
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */

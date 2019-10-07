@@ -50,6 +50,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -58,13 +60,13 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define U_BTN_Pin GPIO_PIN_13
-#define U_BTN_GPIO_Port GPIOC
-#define U_BTN_EXTI_IRQn EXTI15_10_IRQn
+#define BOARD_BTN_Pin GPIO_PIN_13
+#define BOARD_BTN_GPIO_Port GPIOC
+#define BOARD_BTN_EXTI_IRQn EXTI15_10_IRQn
+#define SERVO_Pin GPIO_PIN_0
+#define SERVO_GPIO_Port GPIOA
 #define BUZZER_Pin GPIO_PIN_1
 #define BUZZER_GPIO_Port GPIOA
-#define BOARD_LED_Pin GPIO_PIN_5
-#define BOARD_LED_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
