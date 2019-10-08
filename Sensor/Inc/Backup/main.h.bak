@@ -65,8 +65,6 @@ void Error_Handler(void);
 #define BOARD_BTN_EXTI_IRQn EXTI15_10_IRQn
 #define SERVO_Pin GPIO_PIN_0
 #define SERVO_GPIO_Port GPIOA
-#define BUZZER_Pin GPIO_PIN_1
-#define BUZZER_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

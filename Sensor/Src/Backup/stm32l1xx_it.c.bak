@@ -43,12 +43,14 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
-const int D_P90 = 6399;
-const int D_0   = 6399/2;
-const int D_M90 = 6399/4;
+// const int D_P90 = 6399;   // For 2 ms
+const int D_P90 = 5399;   // For 2 ms
+const int D_0   = 6399/2; // For 1.5 ms
+const int D_M90 = 5399/4; // For 1 ms
 
 extern uint8_t send_en;
 extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
 
 /* USER CODE END PV */
 
@@ -64,6 +66,7 @@ extern TIM_HandleTypeDef htim2;
 
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -218,6 +221,19 @@ void TIM2_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles TIM3 global interrupt.
+  */
+void TIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM3_IRQn 0 */
+
+  /* USER CODE END TIM3_IRQn 0 */
+  /* USER CODE BEGIN TIM3_IRQn 1 */
+
+  /* USER CODE END TIM3_IRQn 1 */
+}
+
+/**
   * @brief This function handles EXTI line[15:10] interrupts.
   */
 void EXTI15_10_IRQHandler(void)
@@ -228,14 +244,29 @@ void EXTI15_10_IRQHandler(void)
 	//
 	// We need to position a servo 0, -90, 0, +90, 0 and emit the tone.
 
-	__disable_irq();
+	static int counter = 0;
+	//__disable_irq();
+	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
+	TIM3->CCR1=31999;
 	EXTI->PR |= GPIO_PIN_13;  // Clear flag
-	TIM2->CCR1=D_0;
-	TIM2->CCR1=D_M90;
-	TIM2->CCR1=D_0;
-	TIM2->CCR1=D_P90;
-	TIM2->CCR1=D_0;
-	__enable_irq();
+	switch(counter) {
+	  case 1:
+	    TIM2->CCR1=D_0;
+	    break;
+	  case 2:
+	    TIM2->CCR1=D_M90;
+	    break;
+	  case 3:
+	    TIM2->CCR1=D_0;
+	    break;
+	  case 4:
+	    TIM2->CCR1=D_P90;
+	    counter = 0;
+	    break;
+	}
+	counter++;
+	HAL_TIM_OC_Stop(&htim3, TIM_CHANNEL_1);
+	//__enable_irq();
   /* USER CODE END EXTI15_10_IRQn 0 */
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
 
