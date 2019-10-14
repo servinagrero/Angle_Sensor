@@ -37,6 +37,11 @@
 uint8_t timer_en    = 0;
 uint8_t cycle_count = 0;
 uint8_t send_en     = 0;
+uint16_t distance   = 0;
+
+// 0 for detector not enabled, 1 for rising edge, 2 for falling edge
+uint32_t flank_detect_en = 0;
+uint32_t start_time = 0, end_time = 0;
 
 /* USER CODE END PD */
 
@@ -48,6 +53,7 @@ uint8_t send_en     = 0;
 /* Private variables ---------------------------------------------------------*/
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim9;
 
 UART_HandleTypeDef huart2;
 
@@ -61,6 +67,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_TIM9_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -125,6 +132,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
   User_Init();
   /* USER CODE END 2 */
@@ -136,6 +144,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  if(send_en){
+		  // The formula distance = mx + n is = 22234 * t - 0.21 but 0.21 is insignificant
+		  distance = (end_time - start_time) * 22234;
+		  printf("Object located at %d cm\n", distance);
+		  start_time = 0;
+		  end_time = 0;
+		  send_en = 0;
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -253,17 +269,17 @@ static void MX_TIM3_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
 
   /* USER CODE BEGIN TIM3_Init 1 */
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 64;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 63999;
+  htim3.Init.Period = 29999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
@@ -273,7 +289,7 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  if (HAL_TIM_IC_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -283,18 +299,80 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_BOTHEDGE;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim3, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
-  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief TIM9 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM9_Init(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 0;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 3199;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OnePulse_Init(&htim9, TIM_OPMODE_SINGLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim9, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 3199;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+
+  /* USER CODE END TIM9_Init 2 */
+  HAL_TIM_MspPostInit(&htim9);
 
 }
 
@@ -344,6 +422,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin : BOARD_BTN_Pin */
   GPIO_InitStruct.Pin = BOARD_BTN_Pin;
@@ -360,26 +439,28 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void User_Init(void)
 {
-	//SysTick->CTRL=0;  //Disable Systick
-
 	EXTI->IMR |= GPIO_PIN_13; // Unmask EXTI13
 	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);  //Enable EXTI13 in NVIC
 
 	// In order to move the servos we need to generate a PWM of 50Hz
-	// We assume a maximum of 2ms of Ton for +90 degress and 1ms for -90
+	// 2ms of Ton for +90 degress and 1ms for -90
 	// For 20ms we get (20e-3 * 32e6)-1 = 639999 > 65536 so we need preescale
 	// If we choose a prescale of 10 we get ARR of 63999
 
+	// Timer used to move the servos
 	TIM2->PSC=10;
 	TIM2->ARR=0x63999;
-	TIM2->CCR1=4799; // 7.5% of duty cycle for 0 degrees
+	TIM2->CCR1=3799; // 7.5% of duty cycle for 0 degrees
 	TIM2->CNT=0;
 
-	TIM3->PSC=0;
-	TIM3->ARR=0x63999;
-	TIM3->CCR1=6399; // 7.5% of duty cycle for 0 degrees
-	TIM3->CNT=0;
-	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1);
+	// Timer used to read the pulse from the distance sensor
+	TIM3->PSC=64;
+	TIM3->ARR=0x29999;
+
+	// Timer used to send the trigger to the sensor
+	TIM9->PSC=0;
+	TIM9->ARR=0x3199; // 100 us
+	TIM9->CCR1=2800; // For a pulse of at least 10 us
 }
 
 /* USER CODE END 4 */
