@@ -71,7 +71,6 @@ extern uint32_t start_time, end_time;
 /* External variables --------------------------------------------------------*/
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
-extern TIM_HandleTypeDef htim9;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -213,39 +212,6 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles TIM9 global interrupt.
-  */
-void TIM9_IRQHandler(void)
-{
-  /* USER CODE BEGIN TIM9_IRQn 0 */
-
-  /* USER CODE END TIM9_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim9);
-  /* USER CODE BEGIN TIM9_IRQn 1 */
-
-  // The pulse goes from 100 us to 18ms for objects in the range of 2 cm to 400 cm
-  // If the sensor does not detect an object, the pulse last approx 36ms.
-  //
-  // Reading CCR clears the flag
-
-  if (flank_detect_en == 1) {
-	  start_time = TIM9->CCR1;
-	  flank_detect_en++;
-  } else if(flank_detect_en == 2) {
-	  end_time = TIM9->CCR1;
-	  flank_detect_en = 0;
-	  send_en = 1;
-
-	  HAL_TIM_OC_Stop(&htim9, TIM_CHANNEL_1);
-
-	  TIM9->ARR=0x3199; // 100 us
-	  TIM9->CCR1=2800; // For a pulse of at least 10 us
-  }
-  __enable_irq();
-  /* USER CODE END TIM9_IRQn 1 */
-}
-
-/**
   * @brief This function handles TIM2 global interrupt.
   */
 void TIM2_IRQHandler(void)
@@ -264,7 +230,20 @@ void TIM2_IRQHandler(void)
 void TIM3_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM3_IRQn 0 */
+	if(flank_detect_en == 1) {
+		start_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
+		flank_detect_en++;
 
+	} else if (flank_detect_en == 2) {
+		end_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
+		TIM3->SR &= ~1;
+
+		HAL_TIM_IC_Stop_IT(&htim2,TIM_CHANNEL_1);
+		HAL_TIM_Base_Stop_IT(&htim2);
+
+		flank_detect_en = 0;
+		send_en = 1;
+	}
   /* USER CODE END TIM3_IRQn 0 */
   /* USER CODE BEGIN TIM3_IRQn 1 */
 
@@ -281,11 +260,6 @@ void EXTI15_10_IRQHandler(void)
 
 	__disable_irq();
 	EXTI->PR |= GPIO_PIN_13;  // Clear flag
-
-	if (!measure_en) {
-		__enable_irq();
-		return;
-	}
 
 	switch(counter) {
 	  case 1:
@@ -304,13 +278,19 @@ void EXTI15_10_IRQHandler(void)
 	}
 	counter++;
 
-	HAL_TIM_OC_Start(&htim9, TIM_CHANNEL_1); // Send trigger to the sensor
 
-	// We enable the first flank
-	// TODO: Wait at least 10 ms between calls. Use systick?
-	flank_detect_en = (flank_detect_en == 0) ? 1 : 0;
+	if (flank_detect_en == 0) {
+		// Send the trigger to the distance sensor
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+		for(int w = 0; w < 500; ++w) {}
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 
-	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1); // Start counting for the readout of the sensor
+		HAL_TIM_IC_Start_IT(&htim3,TIM_CHANNEL_1);
+		HAL_TIM_Base_Start(&htim3);
+
+		flank_detect_en = 1;
+	}
+
 
 	__enable_irq();
   /* USER CODE END EXTI15_10_IRQn 0 */
