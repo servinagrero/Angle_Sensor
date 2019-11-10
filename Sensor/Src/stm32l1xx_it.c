@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
- 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -42,6 +42,19 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
+
+const int D_P90 = 5399;   // For 2 ms
+const int D_0   = 6399/2; // For 1.5 ms
+const int D_M90 = 5399/4; // For 1 ms
+
+uint8_t measure_en = 1;
+
+extern uint8_t send_en;
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
+
+extern uint32_t flank_detect_en;
+extern uint32_t start_time, end_time;
 
 /* USER CODE END PV */
 
@@ -56,7 +69,9 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim9;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -196,6 +211,113 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32l1xx.s).                    */
 /******************************************************************************/
+
+/**
+  * @brief This function handles TIM9 global interrupt.
+  */
+void TIM9_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM9_IRQn 0 */
+
+  /* USER CODE END TIM9_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim9);
+  /* USER CODE BEGIN TIM9_IRQn 1 */
+
+  // The pulse goes from 100 us to 18ms for objects in the range of 2 cm to 400 cm
+  // If the sensor does not detect an object, the pulse last approx 36ms.
+  //
+  // Reading CCR clears the flag
+
+  if (flank_detect_en == 1) {
+	  start_time = TIM9->CCR1;
+	  flank_detect_en++;
+  } else if(flank_detect_en == 2) {
+	  end_time = TIM9->CCR1;
+	  flank_detect_en = 0;
+	  send_en = 1;
+
+	  HAL_TIM_OC_Stop(&htim9, TIM_CHANNEL_1);
+
+	  TIM9->ARR=0x3199; // 100 us
+	  TIM9->CCR1=2800; // For a pulse of at least 10 us
+  }
+  __enable_irq();
+  /* USER CODE END TIM9_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM2 global interrupt.
+  */
+void TIM2_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM2_IRQn 0 */
+
+  /* USER CODE END TIM2_IRQn 0 */
+  /* USER CODE BEGIN TIM2_IRQn 1 */
+
+  /* USER CODE END TIM2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM3 global interrupt.
+  */
+void TIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM3_IRQn 0 */
+
+  /* USER CODE END TIM3_IRQn 0 */
+  /* USER CODE BEGIN TIM3_IRQn 1 */
+
+  /* USER CODE END TIM3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles EXTI line[15:10] interrupts.
+  */
+void EXTI15_10_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
+	static int counter = 0;
+
+	__disable_irq();
+	EXTI->PR |= GPIO_PIN_13;  // Clear flag
+
+	if (!measure_en) {
+		__enable_irq();
+		return;
+	}
+
+	switch(counter) {
+	  case 1:
+	    TIM2->CCR1=D_0;
+	    break;
+	  case 2:
+	    TIM2->CCR1=D_M90;
+	    break;
+	  case 3:
+	    TIM2->CCR1=D_0;
+	    break;
+	  case 4:
+	    TIM2->CCR1=D_P90;
+	    counter = 0;
+	    break;
+	}
+	counter++;
+
+	HAL_TIM_OC_Start(&htim9, TIM_CHANNEL_1); // Send trigger to the sensor
+
+	// We enable the first flank
+	// TODO: Wait at least 10 ms between calls. Use systick?
+	flank_detect_en = (flank_detect_en == 0) ? 1 : 0;
+
+	HAL_TIM_OC_Start(&htim3, TIM_CHANNEL_1); // Start counting for the readout of the sensor
+
+	__enable_irq();
+  /* USER CODE END EXTI15_10_IRQn 0 */
+  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
+
+  /* USER CODE END EXTI15_10_IRQn 1 */
+}
 
 /* USER CODE BEGIN 1 */
 
