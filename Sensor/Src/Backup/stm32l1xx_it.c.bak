@@ -43,34 +43,82 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
-const int D_P90 = 5399;   // For 2 ms
-const int D_0   = 6399/2; // For 1.5 ms
-const int D_M90 = 5399/4; // For 1 ms
+// FIXME: Calibrar los valores del servo
+
 
 uint8_t measure_en = 1;
 
 extern uint8_t send_en;
-extern TIM_HandleTypeDef htim2;
-extern TIM_HandleTypeDef htim3;
+extern uint8_t start_measuring;
+
 
 extern uint32_t flank_detect_en;
 extern uint32_t start_time, end_time;
+extern uint32_t value;
+extern uint32_t vin;
+extern uint32_t vin,last_vin,didnotmove_pot;
+extern uint8_t modo;
+extern uint8_t turn;
+extern uint16_t distances[NUM_SAMPLES];
+
+extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN PFP */
 
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// Manda un pulso al sensor
+void send_pulse() {
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+    for(int w = 0; w < 300; ++w) {}
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+
+    HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+    HAL_TIM_Base_Start_IT(&htim3);
+    flank_detect_en = RISING_EDGE;
+}
+
+void cambio_posicion() {
+
+  if (turn == 0) {
+  	// De -90 a +90
+  	vin = vin + INC;
+  	if (vin >= D_P90) {
+  	    TIM2->CCR1 = D_P90;
+  	    turn = 1;
+  	} else {
+  	    TIM2->CCR1 = vin;
+  	}
+
+      } else if (turn == 1) {
+  	// De + 90 a -90
+  	vin = vin - INC;
+  	if(vin <= D_M90){
+  	    TIM2->CCR1 = D_M90;
+  	    turn = 0;
+  	} else {
+  	    TIM2->CCR1 = vin;
+  	}
+}
+
+}
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern ADC_HandleTypeDef hadc;
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
+extern TIM_HandleTypeDef htim9;
+extern UART_HandleTypeDef huart2;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -212,6 +260,67 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles ADC global interrupt.
+  */
+void ADC1_IRQHandler(void)
+{
+  /* USER CODE BEGIN ADC1_IRQn 0 */
+    // Obtenemos el valor del potenciometro para mover el sensor
+    // Funciona solo en el modo manual
+    // Se toman datos cada vez que se pulse el boton
+
+    if (modo == MODO_A) {
+	return;
+    }
+
+    value = HAL_ADC_GetValue(&hadc);
+
+//    last_vin = vin; //comprobamos estos valores, si es igual que el anterior para apagar el adc
+
+    vin = value * 3300/4096; // Valor en el fondo de escala
+
+    if (vin >= D_P90) vin = D_P90;
+    if (vin <= D_M90) vin = D_M90;
+
+    TIM2->CCR1 = D_M90 + vin;
+
+
+//    if(last_vin==vin){
+//	didnotmove_pot++;
+//    } else if(didnotmove_pot>=5000){
+//	start_measuring=1;
+//	didnotmove_pot=0;
+//	HAL_ADC_Stop_IT(&hadc);
+//    }
+
+  /* USER CODE END ADC1_IRQn 0 */
+  HAL_ADC_IRQHandler(&hadc);
+  /* USER CODE BEGIN ADC1_IRQn 1 */
+  /* USER CODE END ADC1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM9 global interrupt.
+  */
+void TIM9_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM9_IRQn 0 */
+
+    // Mueve el servo en el modo automatico
+
+    if (modo == MODO_M) {
+	return;
+    }
+
+    send_pulse();
+
+  /* USER CODE END TIM9_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim9);
+  /* USER CODE BEGIN TIM9_IRQn 1 */
+  /* USER CODE END TIM9_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM2 global interrupt.
   */
 void TIM2_IRQHandler(void)
@@ -231,11 +340,74 @@ void TIM3_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM3_IRQn 0 */
 
-  /* USER CODE END TIM3_IRQn 0 */
-  HAL_TIM_IRQHandler(&htim3);
-  /* USER CODE BEGIN TIM3_IRQn 1 */
+  __disable_irq();
+    // Lectura de la signal del sensor
+    static uint8_t counter_samples = 0;
+	HAL_TIM_Base_Stop_IT(&htim9);
 
+
+
+    if(flank_detect_en == RISING_EDGE) {
+	start_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
+	flank_detect_en = FALLING_EDGE;
+
+    } else if (flank_detect_en == FALLING_EDGE) {
+	end_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
+	TIM3->SR &= ~1;
+
+	// Si estamos en modo manual, tomamos solo un dato
+	// En modo manual tomamos NUM_SAMPLES y los ponemos
+
+	if ( modo == MODO_M) {
+	    // Deshabilitamos la captura de datos hasta que se vuelva a pulsar el boton
+	    distances[counter_samples] = ((end_time - start_time) / 58);
+	    HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
+	    HAL_TIM_Base_Stop_IT(&htim3);
+
+	    counter_samples = 0;
+	    flank_detect_en = NONE_EDGE;
+	    send_en = 1;
+
+
+	} else if (modo == MODO_A) {
+
+	    distances[counter_samples] = (end_time - start_time) / 58;
+	    cambio_posicion();
+
+	    if (counter_samples < NUM_SAMPLES) {
+		counter_samples++;
+		flank_detect_en = RISING_EDGE;
+	    } else {
+		counter_samples = 0;
+		flank_detect_en = NONE_EDGE;
+		HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
+		HAL_TIM_Base_Stop_IT(&htim3);
+		send_en = 1;
+	    }
+
+	    HAL_TIM_Base_Start_IT(&htim9);
+
+	}
+
+    }
+  /* USER CODE END TIM3_IRQn 0 */
+  /* USER CODE BEGIN TIM3_IRQn 1 */
+    __enable_irq();
   /* USER CODE END TIM3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles USART2 global interrupt.
+  */
+void USART2_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART2_IRQn 0 */
+
+  /* USER CODE END USART2_IRQn 0 */
+  HAL_UART_IRQHandler(&huart2);
+  /* USER CODE BEGIN USART2_IRQn 1 */
+
+  /* USER CODE END USART2_IRQn 1 */
 }
 
 /**
@@ -244,39 +416,32 @@ void TIM3_IRQHandler(void)
 void EXTI15_10_IRQHandler(void)
 {
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
-	static int counter = 0;
 
-	__disable_irq();
-	EXTI->PR |= GPIO_PIN_13;  // Clear flag
+  // En el modo manual, habilitamos la captura de un dato
+  // En el modo automatico, no hace nada
 
-	switch(counter) {
-	  case 1:
-	    TIM2->CCR1=D_0;
-	    break;
-	  case 2:
-	    TIM2->CCR1=D_M90;
-	    break;
-	  case 3:
-	    TIM2->CCR1=D_0;
-	    break;
-	  case 4:
-	    TIM2->CCR1=D_P90;
-	    counter = 0;
-	    break;
-	}
-	counter++;
+  __disable_irq();
+  EXTI->PR |= GPIO_PIN_13;
 
+  if (modo == MODO_A) {
+      __enable_irq();
+      return;
 
-	HAL_GPIO_WritePin(GPIOx, GPIO_Pin, GPIO_PIN_SET);
-	for(int w = 0; w < 500; ++w) {}
-	HAL_GPIO_WritePin(GPIOx, GPIO_Pin, GPIO_PIN_RESET);
+  } else if (modo == MODO_M) {
 
-	// We enable the first flank
-	flank_detect_en = 1;
+//      if(flank_detect_en == NONE_EDGE && start_measuring == 1) {
+	  HAL_TIM_Base_Stop(&htim9);
+          HAL_TIM_Base_Stop_IT(&htim9);
 
-	HAL_TIM_OC_Start_IT(&htim3, TIM_CHANNEL_1); // Start counting for the readout of the sensor
+          __HAL_ADC_DISABLE(&hadc);
+          HAL_ADC_Stop_IT(&hadc);
+          send_pulse();
 
-	__enable_irq();
+          flank_detect_en = RISING_EDGE;
+//     }
+  }
+
+  __enable_irq();
   /* USER CODE END EXTI15_10_IRQn 0 */
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */
 

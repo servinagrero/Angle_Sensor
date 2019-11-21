@@ -33,16 +33,26 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 uint8_t timer_en    = 0;
 uint8_t cycle_count = 0;
 uint8_t send_en     = 0;
-uint16_t distance   = 0;
+uint8_t start_measuring=0; 		//modo 0 usar el ultrasonidos
 
-// 0 for detector not enabled, 1 for rising edge, 2 for falling edge
-uint32_t flank_detect_en = 0;
+uint8_t modo = MODO_M;
+
+uint16_t distances[NUM_SAMPLES];
+uint32_t value = 0;
+uint32_t vin = 0;
+uint32_t last_vin = 0;			//usado para pagar el adc si no se modifica en x tiempo
+uint32_t didnotmove_pot = 0; //condicion de que el adc esta apagado
+uint8_t turn = 0;
+
+uint32_t flank_detect_en = NONE_EDGE;
+
+// Medidas de tiempo para calcular la distancia del potenciometro
 uint32_t start_time = 0, end_time = 0;
 
+uint8_t uart_recieve = '0';
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -51,8 +61,11 @@ uint32_t start_time = 0, end_time = 0;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim9;
 
 UART_HandleTypeDef huart2;
 
@@ -66,7 +79,13 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_ADC_Init(void);
+static void MX_TIM9_Init(void);
 /* USER CODE BEGIN PFP */
+
+void user_init(void);
+void print_data(uint16_t *distances, int num_data);
+void gestionar_modo(uint16_t modo);
 
 /* USER CODE END PFP */
 
@@ -130,8 +149,11 @@ int main(void)
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_ADC_Init();
+  MX_TIM9_Init();
   /* USER CODE BEGIN 2 */
-  User_Init();
+  user_init();
+//  gestionar_modo(modo);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,15 +163,87 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  if(send_en){
-		  // The formula distance = mx + n is = 22234 * t - 0.21 but 0.21 is insignificant
-		  distance = (end_time - start_time) / 58;
-		  printf("Object located at %d cm\n", distance);
-		  start_time = 0;
-		  end_time = 0;
-		  send_en = 0;
+
+      // Primero gestionamos el modo en el que estamos
+      if (modo == MODO_M) {
+
+	  // En el modo automatico se mandan las distancias una vez se ha completado una vuelta
+	  // Sino se ha completado la vuelta, se espera a que acabe
+	  if (send_en == 1) {
+
+	      print_data(distances, 1);
+	      start_time = 0;
+	      end_time = 0;
+
+	      __HAL_ADC_ENABLE(&hadc);
+	      HAL_ADC_Start_IT(&hadc);
+
+	      flank_detect_en = NONE_EDGE;
+	      send_en = 0;
 	  }
+
+      } else if (modo == MODO_A) {
+
+	  if (send_en == 1) {
+	      print_data(distances, NUM_SAMPLES);
+
+	      start_time = 0;
+	      end_time = 0;
+
+	      flank_detect_en = NONE_EDGE;
+	      send_en = 0;
+	  }
+      }
   }
+
+//      if(modo==0) {
+//
+//
+//	  if(send_en == 1) {
+//	      distance = (end_time - start_time) / 58;
+//
+//	      print_data(&distance, 1);
+//
+//
+//	      HAL_ADC_Start_IT(&hadc);
+//	      start_time = 0;
+//	      end_time = 0;
+//	      send_en = 0;
+//	      flank_detect_en = 0;
+//
+//	} else if(modo==1) {
+//
+//	      if(flank_detect_en == 0 & start_measuring == 1) {
+//
+//		  HAL_TIM_Base_Stop(&htim9);
+//		  HAL_TIM_Base_Stop_IT(&htim9);
+//
+//		  send_pulse();
+//
+//		  HAL_TIM_IC_Start_IT(&htim3,TIM_CHANNEL_1);
+//		  HAL_TIM_IC_Start(&htim3, TIM_CHANNEL_1);
+//
+//		  flank_detect_en = 1;
+//	      }
+//	      if(send_en == 1){
+//		  distance = (end_time - start_time) / 58;
+//
+//		  print_data(&distance, 1);
+//
+//		  start_time = 0;
+//		  end_time = 0;
+//		  send_en = 0;
+//		  flank_detect_en = 0;
+//		  //importante modo automatico
+//		  HAL_TIM_Base_Start_IT(&htim9);
+//		  start_measuring=0;
+//	      }
+//	}
+//
+//
+//      }
+//
+//  }
   /* USER CODE END 3 */
 }
 
@@ -191,6 +285,59 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC_Init(void)
+{
+
+  /* USER CODE BEGIN ADC_Init 0 */
+
+  /* USER CODE END ADC_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC_Init 1 */
+
+  /* USER CODE END ADC_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
+  */
+  hadc.Instance = ADC1;
+  hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc.Init.EOCSelection = ADC_EOC_SEQ_CONV;
+  hadc.Init.LowPowerAutoWait = ADC_AUTOWAIT_DISABLE;
+  hadc.Init.LowPowerAutoPowerOff = ADC_AUTOPOWEROFF_DISABLE;
+  hadc.Init.ChannelsBank = ADC_CHANNELS_BANK_A;
+  hadc.Init.ContinuousConvMode = ENABLE;
+  hadc.Init.NbrOfConversion = 1;
+  hadc.Init.DiscontinuousConvMode = DISABLE;
+  hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc.Init.DMAContinuousRequests = DISABLE;
+  if (HAL_ADC_Init(&hadc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_4CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC_Init 2 */
+
+  /* USER CODE END ADC_Init 2 */
+
 }
 
 /**
@@ -311,6 +458,64 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief TIM9 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM9_Init(void)
+{
+
+  /* USER CODE BEGIN TIM9_Init 0 */
+
+  /* USER CODE END TIM9_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM9_Init 1 */
+
+  /* USER CODE END TIM9_Init 1 */
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 240;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 53332;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim9) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim9, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_OC_ConfigChannel(&htim9, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM9_Init 2 */
+
+  /* USER CODE END TIM9_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -370,7 +575,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = TRIGGER_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(TRIGGER_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
@@ -380,30 +585,102 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void User_Init(void)
+
+// Inicializa los perifericos a la config basica
+void user_init(void)
 {
 	EXTI->IMR |= GPIO_PIN_13; // Unmask EXTI13
 	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);  //Enable EXTI13 in NVIC
 
-	// In order to move the servos we need to generate a PWM of 50Hz
-	// 2ms of Ton for +90 degress and 1ms for -90
-	// For 20ms we get (20e-3 * 32e6)-1 = 639999 > 65536 so we need preescale
-	// If we choose a prescale of 10 we get ARR of 63999
-
-	// Timer used to move the servos
+	// Timer en PWM para mover el servo
 	TIM2->PSC=10;
 	TIM2->ARR=0x63999;
-	TIM2->CCR1=3799; // 7.5% of duty cycle for 0 degrees
+	TIM2->CCR1=3799;
 	TIM2->CNT=0;
 
-	// Timer used to read the pulse from the distance sensor
-	TIM3->PSC=64;
-	TIM3->ARR=0x29999;
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 
-	// Timer used to send the trigger to the sensor
-	TIM9->PSC=0;
-	TIM9->ARR=0x3199; // 100 us
-	TIM9->CCR1=2800; // For a pulse of at least 10 us
+	// Timer usado para leer el sensor
+	TIM3->PSC=64;
+	TIM3->ARR=0x34999;
+
+	HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
+	HAL_TIM_Base_Stop_IT(&htim3);
+
+	// Habilitamos poder recibir datos del uart para cambiar de modo
+	HAL_UART_Receive_IT(&huart2, &uart_recieve, sizeof(uint8_t));
+
+	// ADC para leer la posicion del potenciometro
+	__HAL_ADC_ENABLE(&hadc);
+	HAL_ADC_Start(&hadc);
+	HAL_ADC_Start_IT(&hadc);
+}
+
+
+// Muestra por el puerto serie los datos
+// Si alguna distancia es mayor de 250cm o menor de 2cm
+// se muestra que la distancia esta fuera de rango
+void print_data(uint16_t *distances, int num_data) {
+
+  for(int d = 0; d < num_data; ++d) {
+      if(distances[d] > 400 || distances[d] < 2) {
+	  printf("M[%d] is out of range.\n", d);
+      } else {
+	  printf("M[%d] at %u cm.\n", d, distances[d]);
+      }
+  }
+}
+
+// Habilitamos o deshabilitamos los perifericos en funcion del modo al que vamos a pasar
+//
+// Modo automatico:
+//   Servo automatico con un timer (TIM2)
+//   Captura de datos con un timer (TIM3)
+//
+// Modo manual:
+//   Servo manual con el adc (ADC)
+//   Movimiento manual del servo (TIM2)
+//   Captura de datos con el boton (EXTI)
+void gestionar_modo(uint16_t modo) {
+
+    if(modo == MODO_A) {
+
+	__HAL_ADC_DISABLE(&hadc);
+	HAL_ADC_Stop_IT(&hadc);
+
+	HAL_TIM_Base_Start(&htim9);
+	HAL_TIM_Base_Start_IT(&htim9);
+
+
+
+    } else if (modo == MODO_M) {
+
+	HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
+	HAL_TIM_Base_Stop_IT(&htim3);
+
+	HAL_TIM_Base_Stop(&htim9);
+	HAL_TIM_Base_Stop_IT(&htim9);
+
+	__HAL_ADC_ENABLE(&hadc);
+	HAL_ADC_Start_IT(&hadc);
+    }
+}
+
+// Recibimos input del usuario
+// Permite cambiar entre modos de funcionamiento
+// TODO: Add mas modos?
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+
+  __disable_irq();
+
+  if (huart->Instance == USART2) {
+      if(strcmp(uart_recieve,"c") || strcmp(uart_recieve, "C"))
+	  if (modo == MODO_M) modo = MODO_A;
+	  else modo = MODO_M;
+	  gestionar_modo(modo);
+      }
+  __enable_irq();
 }
 
 /* USER CODE END 4 */

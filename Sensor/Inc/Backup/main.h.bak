@@ -56,7 +56,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void send_pulse();
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -68,8 +68,21 @@ void Error_Handler(void);
 #define TRIGGER_Pin GPIO_PIN_4
 #define TRIGGER_GPIO_Port GPIOA
 #define READ_SENSOR_Pin GPIO_PIN_6
-#define READ_SENSOR_GPIO_Port GPIOA
+#define READ_SENSOR_GPIO_Port GPIOC
 /* USER CODE BEGIN Private defines */
+#define MODO_A 0
+#define MODO_M 1
+
+#define NONE_EDGE 0
+#define RISING_EDGE 1
+#define FALLING_EDGE 2
+
+#define D_M90 2000
+#define D_0   3000
+#define D_P90 5500
+
+#define INC 480
+#define NUM_SAMPLES ((D_P90 - D_M90) / INC)
 
 /* USER CODE END Private defines */
 
