@@ -41,6 +41,8 @@ uint8_t start_measuring=0; 		//modo 0 usar el ultrasonidos
 uint8_t modo = MODO_M;
 
 uint16_t distances[NUM_SAMPLES];
+uint16_t angles[NUM_SAMPLES];
+
 uint32_t value = 0;
 uint32_t vin = 0;
 uint32_t last_vin = 0;			//usado para pagar el adc si no se modifica en x tiempo
@@ -180,6 +182,8 @@ int main(void)
 
 	      flank_detect_en = NONE_EDGE;
 	      send_en = 0;
+
+	      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 	  }
 
       } else if (modo == MODO_A) {
@@ -192,8 +196,12 @@ int main(void)
 
 	      flank_detect_en = NONE_EDGE;
 	      send_en = 0;
+
+	      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 	  }
       }
+
   }
 
 //      if(modo==0) {
@@ -477,9 +485,9 @@ static void MX_TIM9_Init(void)
 
   /* USER CODE END TIM9_Init 1 */
   htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 240;
+  htim9.Init.Prescaler = 724;
   htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 53332;
+  htim9.Init.Period = 44197;
   htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
@@ -563,7 +571,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(TRIGGER_GPIO_Port, TRIGGER_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, TRIGGER_Pin|LED_GREEN_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(BUZZER_GPIO_Port, BUZZER_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : BOARD_BTN_Pin */
   GPIO_InitStruct.Pin = BOARD_BTN_Pin;
@@ -577,6 +588,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
   HAL_GPIO_Init(TRIGGER_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED_GREEN_Pin */
+  GPIO_InitStruct.Pin = LED_GREEN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_GREEN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : BUZZER_Pin */
+  GPIO_InitStruct.Pin = BUZZER_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(BUZZER_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
@@ -626,9 +651,10 @@ void print_data(uint16_t *distances, int num_data) {
       if(distances[d] > 400 || distances[d] < 2) {
 	  printf("M[%d] is out of range.\n", d);
       } else {
-	  printf("M[%d] at %u cm.\n", d, distances[d]);
+	  printf("M[%d] (%d) at %u cm.\n", d, angles[d], distances[d]);
       }
   }
+  printf("\n");
 }
 
 // Habilitamos o deshabilitamos los perifericos en funcion del modo al que vamos a pasar
@@ -651,12 +677,14 @@ void gestionar_modo(uint16_t modo) {
 	HAL_TIM_Base_Start(&htim9);
 	HAL_TIM_Base_Start_IT(&htim9);
 
+	TIM2->CCR1 = D_M90;
 
 
     } else if (modo == MODO_M) {
 
 	HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
 	HAL_TIM_Base_Stop_IT(&htim3);
+
 
 	HAL_TIM_Base_Stop(&htim9);
 	HAL_TIM_Base_Stop_IT(&htim9);
@@ -679,6 +707,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	  if (modo == MODO_M) modo = MODO_A;
 	  else modo = MODO_M;
 	  gestionar_modo(modo);
+	  HAL_UART_Receive_IT(&huart2, &uart_recieve, sizeof(uint8_t));
       }
   __enable_irq();
 }

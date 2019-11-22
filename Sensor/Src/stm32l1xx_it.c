@@ -43,23 +43,18 @@
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
 
-// FIXME: Calibrar los valores del servo
-
-
-uint8_t measure_en = 1;
-
 extern uint8_t send_en;
 extern uint8_t start_measuring;
-
 
 extern uint32_t flank_detect_en;
 extern uint32_t start_time, end_time;
 extern uint32_t value;
 extern uint32_t vin;
-extern uint32_t vin,last_vin,didnotmove_pot;
 extern uint8_t modo;
 extern uint8_t turn;
+
 extern uint16_t distances[NUM_SAMPLES];
+extern int16_t angles[NUM_SAMPLES];
 uint8_t counter_samples = 0;
 
 extern TIM_HandleTypeDef htim2;
@@ -91,24 +86,20 @@ void cambio_posicion() {
 
   if (turn == 0) {
   	// De -90 a +90
-  	vin = vin + INC;
-  	if (vin >= D_P90 || counter_samples == 6) {
+  	TIM2->CCR1 = TIM2->CCR1 + INC;
+  	if (TIM2->CCR1 >= D_P90) {
   	    TIM2->CCR1 = D_P90;
   	    turn = 1;
-  	} else {
-  	    TIM2->CCR1 = vin;
   	}
 
-      } else if (turn == 1 || counter_samples == 6) {
+   } else if (turn == 1) {
   	// De + 90 a -90
-  	vin = vin - INC;
-  	if(vin <= D_M90){
+       TIM2->CCR1 = TIM2->CCR1 - INC;
+  	if(TIM2->CCR1 <= D_M90){
   	    TIM2->CCR1 = D_M90;
   	    turn = 0;
-  	} else {
-  	    TIM2->CCR1 = vin;
   	}
-}
+   }
 
 }
 
@@ -276,23 +267,12 @@ void ADC1_IRQHandler(void)
 
     value = HAL_ADC_GetValue(&hadc);
 
-//    last_vin = vin; //comprobamos estos valores, si es igual que el anterior para apagar el adc
-
     vin = value * 3300/4096; // Valor en el fondo de escala
 
     if (vin >= D_P90) vin = D_P90;
     if (vin <= D_M90) vin = D_M90;
 
     TIM2->CCR1 = D_M90 + vin;
-
-
-//    if(last_vin==vin){
-//	didnotmove_pot++;
-//    } else if(didnotmove_pot>=5000){
-//	start_measuring=1;
-//	didnotmove_pot=0;
-//	HAL_ADC_Stop_IT(&hadc);
-//    }
 
   /* USER CODE END ADC1_IRQn 0 */
   HAL_ADC_IRQHandler(&hadc);
@@ -348,7 +328,6 @@ void TIM3_IRQHandler(void)
     HAL_TIM_Base_Stop_IT(&htim9);
 
 
-
     if(flank_detect_en == RISING_EDGE) {
 	start_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
 	flank_detect_en = FALLING_EDGE;
@@ -363,6 +342,11 @@ void TIM3_IRQHandler(void)
 	if ( modo == MODO_M) {
 	    // Deshabilitamos la captura de datos hasta que se vuelva a pulsar el boton
 	    distances[counter_samples] = ((end_time - start_time) / 58);
+
+	    angles[counter_samples] = (int16_t)((TIM2->CCR1 - D_0) / (D_P90 - D_0)) * 90;
+
+	    angles[counter_samples] = TIM2->CCR1;
+
 	    HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
 	    HAL_TIM_Base_Stop_IT(&htim3);
 
@@ -375,6 +359,10 @@ void TIM3_IRQHandler(void)
 
 	    distances[counter_samples] = (end_time - start_time) / 58;
 
+	    int primero = (TIM2->CCR1 - D_0);
+	    int segundo = primero / (D_P90 - D_0);
+	    angles[counter_samples] = (int16_t)segundo * 90;
+
 
 	    if (counter_samples < NUM_SAMPLES) {
 		counter_samples++;
@@ -383,12 +371,13 @@ void TIM3_IRQHandler(void)
 		HAL_TIM_Base_Stop_IT(&htim3);
 		send_en = 0;
 	    } else {
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 		counter_samples = 0;
 		flank_detect_en = NONE_EDGE;
 		HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
 		HAL_TIM_Base_Stop_IT(&htim3);
 		send_en = 1;
-
 	    }
 
 	    HAL_TIM_Base_Start_IT(&htim9);
@@ -435,7 +424,7 @@ void EXTI15_10_IRQHandler(void)
 
   } else if (modo == MODO_M) {
 
-//      if(flank_detect_en == NONE_EDGE && start_measuring == 1) {
+	  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 	  HAL_TIM_Base_Stop(&htim9);
           HAL_TIM_Base_Stop_IT(&htim9);
 
@@ -444,7 +433,6 @@ void EXTI15_10_IRQHandler(void)
           send_pulse();
 
           flank_detect_en = RISING_EDGE;
-//     }
   }
 
   __enable_irq();
