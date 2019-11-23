@@ -23,7 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "sd_hal_mpu6050.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,6 +65,8 @@ uint8_t uart_recieve = '0';
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc;
 
+I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim9;
@@ -72,7 +74,7 @@ TIM_HandleTypeDef htim9;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+SD_MPU6050 mpu1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -83,6 +85,7 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM9_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 void user_init(void);
@@ -136,7 +139,9 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  SD_MPU6050_Result result ;
+  uint8_t mpu_ok[15] = {"MPU WORK FINE\n"};
+  uint8_t mpu_not[17] = {"MPU NOT WORKING\n"};
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -153,6 +158,7 @@ int main(void)
   MX_TIM3_Init();
   MX_ADC_Init();
   MX_TIM9_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   user_init();
 //  gestionar_modo(modo);
@@ -165,6 +171,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+      result = SD_MPU6050_Init(&hi2c1, &mpu1, SD_MPU6050_Device_0,
+			       SD_MPU6050_Accelerometer_2G, SD_MPU6050_Gyroscope_250s);
 
       // Primero gestionamos el modo en el que estamos
       if (modo == MODO_M) {
@@ -296,6 +305,40 @@ static void MX_ADC_Init(void)
   /* USER CODE BEGIN ADC_Init 2 */
 
   /* USER CODE END ADC_Init 2 */
+
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -520,6 +563,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, TRIGGER_Pin|LED_GREEN_Pin, GPIO_PIN_RESET);
@@ -647,7 +691,7 @@ void gestionar_modo(uint16_t modo) {
 
 // Recibimos input del usuario
 // Permite cambiar entre modos de funcionamiento
-// TODO: Add mas modos?
+// TODO: Add mas modos?,
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
   __disable_irq();

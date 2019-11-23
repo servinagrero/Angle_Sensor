@@ -74,8 +74,10 @@ void send_pulse();
 #define BUZZER_Pin GPIO_PIN_8
 #define BUZZER_GPIO_Port GPIOC
 /* USER CODE BEGIN Private defines */
+
 #define MODO_A 0
 #define MODO_M 1
+#define MODO_S 2
 
 #define NONE_EDGE 0
 #define RISING_EDGE 1

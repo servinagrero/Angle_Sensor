@@ -73,9 +73,11 @@ extern TIM_HandleTypeDef htim3;
 
 // Manda un pulso al sensor
 void send_pulse() {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+  // Manda el trigger al sensor de ultrasonidos
+  // Activa el timer para detectar el echo
+    HAL_GPIO_WritePin(TRIGGER_GPIO_Port, TRIGGER_Pin, GPIO_PIN_SET);
     for(int w = 0; w < 300; ++w) {}
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(TRIGGER_GPIO_Port, TRIGGER_Pin, GPIO_PIN_RESET);
 
     HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
     HAL_TIM_Base_Start_IT(&htim3);
@@ -83,6 +85,9 @@ void send_pulse() {
 }
 
 void cambio_posicion() {
+
+  // Mueve el servo en incrementos
+  // Evita que se pase de los angulos limite
 
   if (turn == 0) {
   	// De -90 a +90
@@ -107,6 +112,7 @@ void cambio_posicion() {
 
 /* External variables --------------------------------------------------------*/
 extern ADC_HandleTypeDef hadc;
+extern I2C_HandleTypeDef hi2c1;
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim9;
@@ -257,6 +263,7 @@ void SysTick_Handler(void)
 void ADC1_IRQHandler(void)
 {
   /* USER CODE BEGIN ADC1_IRQn 0 */
+
     // Obtenemos el valor del potenciometro para mover el sensor
     // Funciona solo en el modo manual
     // Se toman datos cada vez que se pulse el boton
@@ -266,13 +273,13 @@ void ADC1_IRQHandler(void)
     }
 
     value = HAL_ADC_GetValue(&hadc);
-
     vin = value * 3300/4096; // Valor en el fondo de escala
 
+    // Posicionamos el servo en funcion del potenciometro
+    // Evita que se pase de los angulos limite
     if (vin >= D_P90) vin = D_P90;
-    if (vin <= D_M90) vin = D_M90;
-
-    TIM2->CCR1 = D_M90 + vin;
+    else if (vin <= D_M90) vin = D_M90;
+    else TIM2->CCR1 = D_M90 + vin;
 
   /* USER CODE END ADC1_IRQn 0 */
   HAL_ADC_IRQHandler(&hadc);
@@ -288,11 +295,11 @@ void TIM9_IRQHandler(void)
   /* USER CODE BEGIN TIM9_IRQn 0 */
 
     // Mueve el servo en el modo automatico
-
     if (modo == MODO_M) {
 	return;
     }
 
+    // La primera medida se realiza en los angulos limite
     if (counter_samples > 0) cambio_posicion();
     send_pulse();
 
@@ -323,10 +330,10 @@ void TIM3_IRQHandler(void)
   /* USER CODE BEGIN TIM3_IRQn 0 */
 
   __disable_irq();
-    // Lectura de la signal del sensor
+
+    // Lectura de la onda del sensor
 
     HAL_TIM_Base_Stop_IT(&htim9);
-
 
     if(flank_detect_en == RISING_EDGE) {
 	start_time = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
@@ -337,15 +344,12 @@ void TIM3_IRQHandler(void)
 	TIM3->SR &= ~1;
 
 	// Si estamos en modo manual, tomamos solo un dato
-	// En modo manual tomamos NUM_SAMPLES y los ponemos
+	// En modo automatico tomamos NUM_SAMPLES
 
 	if ( modo == MODO_M) {
 	    // Deshabilitamos la captura de datos hasta que se vuelva a pulsar el boton
 	    distances[counter_samples] = ((end_time - start_time) / 58);
-
 	    angles[counter_samples] = (int16_t)((TIM2->CCR1 - D_0) / (D_P90 - D_0)) * 90;
-
-	    angles[counter_samples] = TIM2->CCR1;
 
 	    HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
 	    HAL_TIM_Base_Stop_IT(&htim3);
@@ -366,18 +370,22 @@ void TIM3_IRQHandler(void)
 
 	    if (counter_samples < NUM_SAMPLES) {
 		counter_samples++;
+		send_en = 0;
 		flank_detect_en = RISING_EDGE;
+
 		HAL_TIM_IC_Stop_IT(&htim3,TIM_CHANNEL_1);
 		HAL_TIM_Base_Stop_IT(&htim3);
-		send_en = 0;
+
 	    } else {
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+
 		counter_samples = 0;
 		flank_detect_en = NONE_EDGE;
+		send_en = 1;
+
 		HAL_TIM_IC_Stop_IT(&htim3, TIM_CHANNEL_1);
 		HAL_TIM_Base_Stop_IT(&htim3);
-		send_en = 1;
 	    }
 
 	    HAL_TIM_Base_Start_IT(&htim9);
@@ -389,6 +397,20 @@ void TIM3_IRQHandler(void)
   /* USER CODE BEGIN TIM3_IRQn 1 */
     __enable_irq();
   /* USER CODE END TIM3_IRQn 1 */
+}
+
+/**
+  * @brief This function handles I2C1 event interrupt.
+  */
+void I2C1_EV_IRQHandler(void)
+{
+  /* USER CODE BEGIN I2C1_EV_IRQn 0 */
+
+  /* USER CODE END I2C1_EV_IRQn 0 */
+  HAL_I2C_EV_IRQHandler(&hi2c1);
+  /* USER CODE BEGIN I2C1_EV_IRQn 1 */
+
+  /* USER CODE END I2C1_EV_IRQn 1 */
 }
 
 /**
